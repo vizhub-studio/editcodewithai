@@ -185,6 +185,119 @@ console.log('new file');
     expect(newFile).toBeDefined();
     expect(newFile?.text).toBe("console.log('new file');");
   });
+
+  it("should apply changes correctly with 'hybrid' format using only diffs", async () => {
+    const mockHybridLlmFunction: LlmFunction = vi.fn().mockResolvedValue({
+      content: [
+        "test.js",
+        "```",
+        "<<<<<<< SEARCH",
+        'console.log("original");',
+        "=======",
+        'console.log("updated via hybrid diff");',
+        ">>>>>>> REPLACE",
+        "```",
+      ].join("\n"),
+      generationId: "test-hybrid-diff-id",
+    });
+
+    const result = await performAiEdit({
+      ...defaultParams,
+      llmFunction: mockHybridLlmFunction,
+      editFormat: "hybrid",
+    });
+
+    expect(result.changedFiles["file1"].text).toBe(
+      'console.log("updated via hybrid diff");',
+    );
+  });
+
+  it("should apply changes correctly with 'hybrid' format using only whole files", async () => {
+    const mockHybridWholeLlmFunction: LlmFunction = vi.fn().mockResolvedValue({
+      content: `**test.js**
+
+\`\`\`js
+console.log("updated via hybrid whole");
+\`\`\``,
+      generationId: "test-hybrid-whole-id",
+    });
+
+    const result = await performAiEdit({
+      ...defaultParams,
+      llmFunction: mockHybridWholeLlmFunction,
+      editFormat: "hybrid",
+    });
+
+    expect(result.changedFiles["file1"].text).toBe(
+      'console.log("updated via hybrid whole");',
+    );
+  });
+
+  it("should apply changes correctly with 'hybrid' format mixing both formats", async () => {
+    const files: VizFiles = {
+      file1: { name: "alpha.js", text: 'const a = "old";' },
+      file2: { name: "beta.js", text: 'const b = "old";' },
+    };
+
+    const mockHybridMixedLlmFunction: LlmFunction = vi.fn().mockResolvedValue({
+      content: [
+        // Diff for alpha.js
+        "alpha.js",
+        "```",
+        "<<<<<<< SEARCH",
+        'const a = "old";',
+        "=======",
+        'const a = "updated via diff";',
+        ">>>>>>> REPLACE",
+        "```",
+        "",
+        // Whole-file for beta.js
+        "**beta.js**",
+        "",
+        "\`\`\`js",
+        'const b = "updated via whole";',
+        "\`\`\`",
+      ].join("\n"),
+      generationId: "test-hybrid-mixed-id",
+    });
+
+    const result = await performAiEdit({
+      prompt: "Update the code",
+      files,
+      llmFunction: mockHybridMixedLlmFunction,
+      editFormat: "hybrid",
+    });
+
+    expect(result.changedFiles["file1"].text).toBe(
+      'const a = "updated via diff";',
+    );
+    expect(result.changedFiles["file2"].text).toBe(
+      'const b = "updated via whole";',
+    );
+  });
+
+  it("should create new files with 'hybrid' format", async () => {
+    const mockCreateLlmFunction: LlmFunction = vi.fn().mockResolvedValue({
+      content: `**new-file.js**
+
+\`\`\`js
+console.log('new hybrid file');
+\`\`\``,
+      generationId: "test-hybrid-create-id",
+    });
+
+    const result = await performAiEdit({
+      ...defaultParams,
+      llmFunction: mockCreateLlmFunction,
+      editFormat: "hybrid",
+    });
+
+    const newFile = Object.values(result.changedFiles).find(
+      (f) => f.name === "new-file.js",
+    );
+    expect(newFile).toBeDefined();
+    expect(newFile?.text).toBe("console.log('new hybrid file');");
+  });
 });
 
 describe("FORMAT_INSTRUCTIONS", () => {
@@ -197,12 +310,14 @@ describe("FORMAT_INSTRUCTIONS", () => {
     expect(FORMAT_INSTRUCTIONS).toHaveProperty("diff");
     expect(FORMAT_INSTRUCTIONS).toHaveProperty("diff-fenced");
     expect(FORMAT_INSTRUCTIONS).toHaveProperty("udiff");
+    expect(FORMAT_INSTRUCTIONS).toHaveProperty("hybrid");
 
     // Check that each format has string instructions
     expect(typeof FORMAT_INSTRUCTIONS.whole).toBe("string");
     expect(typeof FORMAT_INSTRUCTIONS.diff).toBe("string");
     expect(typeof FORMAT_INSTRUCTIONS["diff-fenced"]).toBe("string");
     expect(typeof FORMAT_INSTRUCTIONS.udiff).toBe("string");
+    expect(typeof FORMAT_INSTRUCTIONS.hybrid).toBe("string");
 
     // Verify the instructions contain expected content
     expect(FORMAT_INSTRUCTIONS.whole).toContain("Formatting Instructions");
@@ -211,5 +326,6 @@ describe("FORMAT_INSTRUCTIONS", () => {
       "file path inside the fence",
     );
     expect(FORMAT_INSTRUCTIONS.udiff).toContain("unified diff format");
+    expect(FORMAT_INSTRUCTIONS.hybrid).toContain("You can mix both formats");
   });
 });
