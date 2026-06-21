@@ -2,21 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   shouldDeleteFile,
   prepareFilesForPrompt,
-  mergeFileChanges,
-  parseDiffs,
-  applyDiffs,
-  Diff,
-  parseDiffFenced,
-  UdiffHunk,
-  parseUdiffs,
-  applyUdiffs,
-} from "./fileUtils";
-import { VizFiles, FileCollection } from "@vizhub/viz-types";
-
-import { describe, it, expect } from "vitest";
-import {
-  shouldDeleteFile,
-  prepareFilesForPrompt,
   isImageFile,
   mergeFileChanges,
   parseDiffs,
@@ -26,6 +11,7 @@ import {
   UdiffHunk,
   parseUdiffs,
   applyUdiffs,
+  applyHybridEdits,
 } from "./fileUtils";
 import { VizFiles, FileCollection } from "@vizhub/viz-types";
 
@@ -528,6 +514,148 @@ describe("udiff utilities", () => {
       expect(() => applyUdiffs(files, hunks)).toThrow(
         "Original content for hunk not found in file: file.js",
       );
+    });
+  });
+});
+
+describe("hybrid utilities", () => {
+  // Helper: a simplified whole-file parser for testing
+  function parseWholeFiles(text: string): FileCollection {
+    const files: FileCollection = {};
+    // Matches **filename**\n\n```...``` or **filename**\n```...```
+    const wholeRegex = /\*\*(.+?)\*\*\n+```(?:\w+)?\n([\s\S]*?)```/g;
+    let match;
+    while ((match = wholeRegex.exec(text)) !== null) {
+      files[match[1].trim()] = match[2].trimEnd();
+    }
+    return files;
+  }
+
+  describe("applyHybridEdits", () => {
+    it("should apply only diff blocks when no whole-file blocks are present", () => {
+      const files: VizFiles = {
+        file1: { name: "test.js", text: 'console.log("original");' },
+      };
+      const response = [
+        "test.js",
+        "```",
+        "<<<<<<< SEARCH",
+        'console.log("original");',
+        "=======",
+        'console.log("updated via diff");',
+        ">>>>>>> REPLACE",
+        "```",
+      ].join("\n");
+
+      const result = applyHybridEdits(response, files, parseWholeFiles);
+      expect(result["file1"].text).toBe('console.log("updated via diff");');
+    });
+
+    it("should apply only whole-file blocks when no diffs are present", () => {
+      const files: VizFiles = {
+        file1: { name: "test.js", text: 'console.log("original");' },
+      };
+      const response = `**test.js**
+
+\`\`\`js
+console.log("updated via whole");
+\`\`\``;
+
+      const result = applyHybridEdits(response, files, parseWholeFiles);
+      expect(result["file1"].text).toBe('console.log("updated via whole");');
+    });
+
+    it("should mix both formats: diff for one file, whole for another", () => {
+      const files: VizFiles = {
+        file1: { name: "alpha.js", text: 'const a = "old";' },
+        file2: { name: "beta.js", text: 'const b = "old";' },
+      };
+      const response = [
+        // Diff-style change for alpha.js
+        "alpha.js",
+        "```",
+        "<<<<<<< SEARCH",
+        'const a = "old";',
+        "=======",
+        'const a = "updated via diff";',
+        ">>>>>>> REPLACE",
+        "```",
+        "",
+        // Whole-file change for beta.js
+        "**beta.js**",
+        "",
+        "```js",
+        'const b = "updated via whole";',
+        "```",
+      ].join("\n");
+
+      const result = applyHybridEdits(response, files, parseWholeFiles);
+      expect(result["file1"].text).toBe('const a = "updated via diff";');
+      expect(result["file2"].text).toBe('const b = "updated via whole";');
+    });
+
+    it("should let whole-file override diff when both target the same file", () => {
+      const files: VizFiles = {
+        file1: { name: "test.js", text: 'const x = "original";' },
+      };
+      const response = [
+        // Diff attempts to change it
+        "test.js",
+        "```",
+        "<<<<<<< SEARCH",
+        'const x = "original";',
+        "=======",
+        'const x = "from-diff";',
+        ">>>>>>> REPLACE",
+        "```",
+        "",
+        // Whole-file overrides it
+        "**test.js**",
+        "",
+        "```js",
+        'const x = "from-whole-wins";',
+        "```",
+      ].join("\n");
+
+      const result = applyHybridEdits(response, files, parseWholeFiles);
+      // Whole-file content should win
+      expect(result["file1"].text).toBe('const x = "from-whole-wins";');
+    });
+
+    it("should create new files via whole-file blocks", () => {
+      const files: VizFiles = {
+        file1: { name: "existing.js", text: "keep me" },
+      };
+      const response = `**new-file.js**
+
+\`\`\`js
+console.log("new file");
+\`\`\``;
+
+      const result = applyHybridEdits(response, files, parseWholeFiles);
+      const newFile = Object.values(result).find(
+        (f) => f.name === "new-file.js",
+      );
+      expect(newFile).toBeDefined();
+      expect(newFile!.text).toBe('console.log("new file");');
+      // Existing file unchanged
+      expect(result["file1"].text).toBe("keep me");
+    });
+
+    it("should delete files via empty whole-file content", () => {
+      const files: VizFiles = {
+        file1: { name: "keep.js", text: "keep me" },
+        file2: { name: "delete.js", text: "delete me" },
+      };
+      const response = `**delete.js**
+
+\`\`\`
+\`\`\``;
+
+      const result = applyHybridEdits(response, files, parseWholeFiles);
+      expect(Object.keys(result)).toHaveLength(1);
+      expect(result["file1"]).toBeDefined();
+      expect(result["file2"]).toBeUndefined();
     });
   });
 });

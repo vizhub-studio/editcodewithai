@@ -14,6 +14,7 @@ import {
   parseDiffFenced,
   parseUdiffs,
   applyUdiffs,
+  applyHybridEdits,
   isImageFile,
 } from "./fileUtils";
 
@@ -34,6 +35,7 @@ export {
   parseDiffFenced,
   parseUdiffs,
   applyUdiffs,
+  applyHybridEdits,
   assembleFullPrompt,
   getGenerationMetadata,
   PROMPT_TEMPLATE_VERSION,
@@ -94,6 +96,14 @@ export async function performAiEdit({
     case "udiff": {
       const hunks = parseUdiffs(resultString);
       changedFiles = applyUdiffs(files, hunks);
+      break;
+    }
+    case "hybrid": {
+      changedFiles = applyHybridEdits(
+        resultString,
+        files,
+        (text) => parseMarkdownFiles(text, "bold").files,
+      );
       break;
     }
     default:

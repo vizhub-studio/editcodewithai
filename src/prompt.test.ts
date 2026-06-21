@@ -66,6 +66,21 @@ describe("prompt", () => {
       expect(result).toContain("unified diff format");
     });
 
+    it("should use hybrid format instructions when specified", () => {
+      const prompt = "Fix bugs";
+      const filesContext = "**test.js**\n```js\nlet x = 1;\n```";
+
+      const result = assembleFullPrompt({
+        filesContext,
+        prompt,
+        editFormat: "hybrid",
+      });
+
+      expect(result).toContain("Search/replace diff format");
+      expect(result).toContain("Whole file format");
+      expect(result).toContain("You can mix both formats");
+    });
+
     it("should include image files list when provided", () => {
       const prompt = "Update the code";
       const filesContext = "**file.js**\n```js\nconsole.log('hello');\n```";

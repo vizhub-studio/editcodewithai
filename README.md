@@ -1,6 +1,6 @@
 # editcodewithai
 
-A lightweight, flexible library for AI-powered code editing.
+A lightweight, model-agnostic library for AI-powered code editing.
 
 See also [vizhub-benchmarks](https://github.com/vizhub-core/vizhub-benchmarks).
 
@@ -8,7 +8,7 @@ See also [vizhub-benchmarks](https://github.com/vizhub-core/vizhub-benchmarks).
 
 `editcodewithai` is a JavaScript/TypeScript library that enables AI-powered code editing in your applications. It provides a simple interface to send code files and instructions to an LLM (Large Language Model) and receive edited code in return.
 
-The library is designed to be model-agnostic, allowing you to use any LLM provider while handling the prompt engineering, file parsing, and response processing for you.
+The library is designed to be **model-agnostic** — you provide a function that calls any LLM provider (OpenAI, Anthropic, OpenRouter, local models, etc.), and `editcodewithai` handles the prompt engineering, file parsing, and response processing.
 
 Edit formats inspired by [Aider](https://aider.chat/). See [Aider: Edit Formats](https://aider.chat/docs/more/edit-formats.html) for details.
 
@@ -66,16 +66,24 @@ main();
 
 ## Edit Formats
 
-This library supports several "edit formats" that instruct the LLM on how to specify file changes. Different models may perform better with different formats. You can specify the format using the `editFormat` parameter in `performAiEdit`.
+This library supports five edit formats that instruct the LLM on how to specify file changes. Different models may perform better with different formats. You specify the format via the `editFormat` parameter in `performAiEdit`.
+
+| Format        | Description                                                                                 | File path location       |
+| ------------- | ------------------------------------------------------------------------------------------- | ------------------------ |
+| `whole`       | Complete file replacement (default). Simple but wasteful for small changes in large files.  | After `**file.js**` bold |
+| `diff`        | Search/replace blocks. Efficient — only the changed portions are transmitted. (Aider-style) | Outside the code fence   |
+| `diff-fenced` | Same search/replace blocks, but with file path _inside_ the code fence.                     | Inside the code fence    |
+| `udiff`       | Unified diff format. Each hunk shows exact lines to add/remove with surrounding context.    | After `---` / `+++`      |
+| `hybrid`      | Mix-and-match: the LLM chooses per file whether to use `whole` or `diff` format.            | Both styles supported    |
 
 ### `whole` (default)
 
-The LLM returns the complete, updated content for each file that needs changes. This is simple but can be inefficient for large files with small changes.
+The LLM returns the complete, updated content for each file that needs changes. The file name is written in bold (`**name**`) followed by a fenced code block.
 
-**Example:**
+**Example LLM response:**
 
 ````
-index.js
+**index.js**
 ```js
 console.log("Hello, Universe!");
 ```
@@ -83,9 +91,9 @@ console.log("Hello, Universe!");
 
 ### `diff`
 
-The LLM returns a series of search-and-replace blocks. This is efficient as it only includes the changed portions of the files.
+The LLM returns search/replace blocks. Each block specifies the file path on its own line, then a fenced block containing a `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` section. The library finds the `SEARCH` text in the original file and replaces it with the `REPLACE` text.
 
-**Example:**
+**Example LLM response:**
 
 ````
 index.js
@@ -98,23 +106,139 @@ console.log("Hello, Universe!");
 ```
 ````
 
-### File Operations
+### `diff-fenced`
+
+Same search/replace concept as `diff`, but the file path is placed on the first line _inside_ the code fence instead of outside it.
+
+**Example LLM response:**
+
+````
+```
+index.js
+<<<<<<< SEARCH
+console.log("Hello, World!");
+=======
+console.log("Hello, Universe!");
+>>>>>>> REPLACE
+```
+````
+
+### `udiff`
+
+The LLM returns standard unified diff hunks inside a ` ```diff ` code fence. Each hunk begins with `@@ ... @@` and uses `-` / `+` prefixes for removed / added lines. Lines prefixed with a space are context used for matching.
+
+**Example LLM response:**
+
+````diff
+```diff
+--- index.js
++++ index.js
+@@ -1 +1 @@
+-console.log("Hello, World!");
++console.log("Hello, Universe!");
+```
+````
+
+### `hybrid`
+
+The LLM can mix both whole-file and search/replace formats in the same response, choosing per file which is more appropriate. Use the **whole-file format** for major rewrites, new files, or when many parts of a file change. Use the **search/replace diff format** for small, targeted changes. If the same file appears in both formats, the whole-file content takes precedence (applied after the diff).
+
+**Example LLM response:**
+
+````
+alpha.js
+```
+<<<<<<< SEARCH
+const greeting = "Hello";
+=======
+const greeting = "Hi";
+>>>>>>> REPLACE
+```
+
+**beta.js**
+
+```js
+// Entirely rewritten file
+const beta = "new version";
+```
+````
+
+## File Operations
 
 The library handles several file operations automatically:
 
-- **Updating existing files**: When the AI modifies a file's content
-- **Creating new files**: When the AI suggests new files to add
-- **Deleting files**: When the AI returns empty content for a file
+- **Updating existing files**: When the AI modifies a file's content (using any edit format).
+- **Creating new files**: When the AI includes a file name that doesn't exist in the original set.
+- **Deleting files**: When the AI returns empty/whitespace-only content for a file (works with `whole` format; for `diff`/`udiff`, deletions happen naturally when all content is replaced).
+
+## API Reference
+
+### `performAiEdit(params)`
+
+The main entry point. Accepts a `PerformAiEditParams` object and returns a `PerformAiEditResult`.
+
+#### Input: `PerformAiEditParams`
+
+| Property      | Type                                            | Default    | Description                                                                      |
+| ------------- | ----------------------------------------------- | ---------- | -------------------------------------------------------------------------------- |
+| `prompt`      | `string`                                        | _required_ | Natural-language instructions describing the desired changes.                    |
+| `files`       | `VizFiles`                                      | _required_ | A record of file objects (`{ [id]: { name, text } }`).                           |
+| `llmFunction` | `LlmFunction`                                   | _required_ | Async function that sends the assembled prompt to an LLM and returns its output. |
+| `editFormat`  | `"whole" \| "diff" \| "diff-fenced" \| "udiff"` | `"whole"`  | How the LLM should specify file changes.                                         |
+| `apiKey`      | `string`                                        | optional   | OpenRouter API key — if provided, cost metadata is fetched automatically.        |
+
+#### `LlmFunction`
+
+```typescript
+type LlmFunction = (prompt: string) => Promise<{
+  content: string; // The raw string response from the LLM
+  generationId?: string; // OpenRouter generation ID (for cost tracking)
+}>;
+```
+
+#### Output: `PerformAiEditResult`
+
+| Property                 | Type       | Description                                                    |
+| ------------------------ | ---------- | -------------------------------------------------------------- |
+| `changedFiles`           | `VizFiles` | The updated file collection with all edits applied.            |
+| `openRouterGenerationId` | `string`   | The generation ID from the LLM function response.              |
+| `upstreamCostCents`      | `number`   | Cost in cents (only populated if `apiKey` was provided).       |
+| `provider`               | `string`   | The OpenRouter provider name used.                             |
+| `inputTokens`            | `number`   | Number of input (prompt) tokens billed.                        |
+| `outputTokens`           | `number`   | Number of output (completion) tokens billed.                   |
+| `promptTemplateVersion`  | `number`   | Version of the prompt template used (for tracking migrations). |
+| `rawResponse`            | `string`   | The raw string response from the LLM, unmodified.              |
+
+### Exported Utilities
+
+```typescript
+import {
+  // --- Prompt assembly ---
+  assembleFullPrompt, // Build a complete prompt string from task, files, format
+  FORMAT_INSTRUCTIONS, // { whole, diff, 'diff-fenced', udiff, hybrid } — full formatting instructions
+  PROMPT_TEMPLATE_VERSION,
+
+  // --- File processing ---
+  mergeFileChanges, // Merge LLM output back into original files
+  prepareFilesForPrompt, // Prepare files for prompt (truncation, image exclusion)
+  isImageFile, // Check if a filename refers to an image
+
+  // --- Diff parsing (manual use) ---
+  parseDiffs, // Parse search/replace blocks (diff format)
+  applyDiffs, // Apply parsed diffs to a file set
+  parseDiffFenced, // Parse search/replace blocks (diff-fenced format)
+  parseUdiffs, // Parse unified diff hunks
+  applyUdiffs, // Apply parsed unified diff hunks to a file set
+  applyHybridEdits, // Apply mixed whole-file + diff edits from a single response
+
+  // --- Cost metadata ---
+  getGenerationMetadata, // Fetch OpenRouter cost data for a generation ID
+} from "editcodewithai";
+```
 
 ## Format Instructions
 
-The library exports `FORMAT_INSTRUCTIONS` which contains the exact prompt instructions used for each edit format. This can be useful if you want to:
-
-- Use the formatting instructions in your own custom prompts
-- Understand exactly what instructions are sent to the LLM for each format
-- Build your own AI editing tools using the same proven prompt patterns
-
-### Usage
+The `FORMAT_INSTRUCTIONS` export contains the exact prompt text sent to the LLM for each edit format. You can use them in custom prompts:
 
 ```typescript
 import { FORMAT_INSTRUCTIONS } from "editcodewithai";
@@ -134,57 +258,66 @@ ${yourCodeHere}
 `;
 ```
 
-### Available Formats
+## Image File Handling
 
-The `FORMAT_INSTRUCTIONS` object contains instructions for these edit formats:
+Files with image extensions (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.svg`, `.webp`) are handled specially:
 
-- **`whole`**: Instructions for returning complete file contents
-- **`diff`**: Instructions for search-and-replace blocks
-- **`diff-fenced`**: Instructions for search-and-replace blocks with file paths inside code fences
-- **`udiff`**: Instructions for unified diff format
+- They are **excluded** from the file listing sent to the LLM (binary content is not useful in the prompt).
+- Their filenames are listed separately at the end of the prompt so the LLM is aware of them (e.g., to reference them in HTML `<img>` tags).
+- The `isImageFile()` utility can be used to check if a filename is an image.
 
-Each instruction set is a string containing detailed formatting guidelines that help ensure the LLM produces properly structured output that can be parsed by the library.
+## File Truncation
+
+When preparing files for the prompt via `prepareFilesForPrompt`, large files are truncated to keep prompts manageable:
+
+- Regular files: truncated to **500 lines**, each line capped at **200 characters**.
+- CSV and JSON files: truncated to **50 lines** (these files tend to be very large).
+- Image files: excluded entirely (see above).
+
+## Benchmarking
+
+The project includes a benchmarking system for evaluating LLM edit quality across different models and edit formats.
+
+```bash
+# Run benchmarks
+npm run benchmark
+
+# Grade results
+npm run grade
+```
+
+Benchmarks live in the `benchmarks/` directory. Results, caches, and challenges are gitignored to keep the repository size small.
+
+## OpenRouter Cost Tracking
+
+If you provide an `apiKey` (OpenRouter API key) and your `LlmFunction` returns a `generationId` from OpenRouter, the library automatically fetches cost metadata after each edit. The result includes `upstreamCostCents`, `provider`, `inputTokens`, and `outputTokens`.
+
+The `getGenerationMetadata` utility implements retry logic with up to 10 attempts (1 second delay) to handle the brief delay before OpenRouter makes generation metadata available.
 
 ## Similar Projects
 
-- **Aider**: An AI pair programming tool that integrates with your terminal to assist in code editing within your local git repository. [https://aider.chat/](https://aider.chat/)
-
-- **Bolt.new / Bolt.diy**: A platform that allows users to prompt, run, edit, and deploy full-stack web and mobile applications. [https://bolt.new/](https://bolt.new/)
-
-- **Cline**: An AI-powered code assistant designed to help developers write and debug code more efficiently. [https://cline.ai/](https://cline.ai/)
-
-- **Cerebras Coder**: A code generation tool developed by Cerebras Systems, leveraging advanced AI models to assist in coding tasks. [https://www.cerebras.net/](https://www.cerebras.net/)
-
-- **Pear AI**: An open-source AI code editor that accelerates the development process by integrating features like AI chat, code generation, and debugging assistance. [https://trypear.ai/](https://trypear.ai/)
-
-- **Void**: An open-source alternative to proprietary AI code editors, offering AI-assisted coding features while prioritizing user privacy and control. [https://void.dev/](https://void.dev/)
-
-- **Cody**: An advanced AI coding assistant developed by Sourcegraph, integrating seamlessly with popular IDEs to provide features like AI-driven chat, code autocompletion, and inline editing. [https://github.com/sourcegraph/cody](https://github.com/sourcegraph/cody)
+- **[Aider](https://aider.chat/)** — AI pair programming in the terminal with local git repos. The edit formats used in this library were inspired by Aider's search/replace approach.
+- **[Bolt.new / Bolt.diy](https://bolt.new/)** — Prompt, run, edit, and deploy full-stack apps in the browser.
+- **[Cline](https://cline.ai/)** — AI coding assistant for VS Code.
+- **[Cerebras Coder](https://www.cerebras.net/)** — Code generation using Cerebras hardware.
+- **[Pear AI](https://trypear.ai/)** — Open-source AI code editor.
+- **[Void](https://void.dev/)** — Open-source AI coding environment with privacy focus.
+- **[Cody](https://github.com/sourcegraph/cody)** — AI coding assistant by Sourcegraph, available as IDE extensions.
 
 ## Contributing
 
-To contribute to this project:
-
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/editcodewithai.git
-
-# Navigate to project directory
-cd editcodewithai
+git clone https://github.com/vizhub-core/editcodewithai.git
 
 # Install dependencies
+cd editcodewithai
 npm install
 ```
 
-Run tests to ensure everything is working correctly:
+Before submitting a PR, ensure all checks pass:
 
 ```bash
-npm test
-```
-
-Please submit pull requests with clear descriptions of changes and ensure all tests pass. Protocol for wrapping up a PR:
-
-```
 npm test
 npm run typecheck
 npm run prettier
@@ -195,4 +328,4 @@ Please create an issue first before creating a PR to discuss the changes you wan
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT. See the [LICENSE](LICENSE) file for details.

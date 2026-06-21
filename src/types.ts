@@ -1,6 +1,6 @@
 import { VizFiles } from "@vizhub/viz-types";
 
-export type EditFormat = "whole" | "diff" | "diff-fenced" | "udiff";
+export type EditFormat = "whole" | "diff" | "diff-fenced" | "udiff" | "hybrid";
 
 export type LlmFunction = (prompt: string) => Promise<{
   content: string;

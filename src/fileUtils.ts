@@ -213,6 +213,31 @@ export function parseUdiffs(responseText: string): UdiffHunk[] {
   return hunks;
 }
 
+/**
+ * Hybrid edit mode: parses both whole-file blocks (bold-markdown)
+ * and search/replace diff blocks from the same response.
+ *
+ * Strategy:
+ * 1. Apply all search/replace diffs first.
+ * 2. Then apply whole-file replacements on top.
+ *    (If the same file appears in both forms, the whole-file content wins.)
+ */
+export function applyHybridEdits(
+  responseText: string,
+  originalFiles: VizFiles,
+  parseWholeFiles: (text: string) => FileCollection,
+): VizFiles {
+  // Step 1: apply search/replace diffs
+  const diffs = parseDiffs(responseText);
+  let changedFiles = applyDiffs(originalFiles, diffs);
+
+  // Step 2: parse and apply whole-file replacements on top
+  const parsed = parseWholeFiles(responseText);
+  changedFiles = mergeFileChanges(changedFiles, parsed);
+
+  return changedFiles;
+}
+
 export function applyUdiffs(
   originalFiles: VizFiles,
   hunks: UdiffHunk[],
