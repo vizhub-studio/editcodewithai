@@ -60,7 +60,7 @@ describe("performAiEdit", () => {
       provider: "test-provider",
       inputTokens: 100,
       outputTokens: 50,
-      promptTemplateVersion: 1,
+      promptTemplateVersion: 2,
     });
 
     // Verify file content was updated
@@ -297,6 +297,65 @@ console.log('new hybrid file');
     );
     expect(newFile).toBeDefined();
     expect(newFile?.text).toBe("console.log('new hybrid file');");
+  });
+
+  it("returns partial success and warnings instead of throwing for 'diff'", async () => {
+    const mockPartialLlmFunction: LlmFunction = vi.fn().mockResolvedValue({
+      content: [
+        "test.js",
+        "```",
+        "<<<<<<< SEARCH",
+        'console.log("original");',
+        "=======",
+        'console.log("updated");',
+        ">>>>>>> REPLACE",
+        "```",
+        "",
+        "missing.js",
+        "```",
+        "<<<<<<< SEARCH",
+        "whatever",
+        "=======",
+        "something",
+        ">>>>>>> REPLACE",
+        "```",
+      ].join("\n"),
+      generationId: "test-partial-id",
+    });
+
+    const result = await performAiEdit({
+      ...defaultParams,
+      llmFunction: mockPartialLlmFunction,
+      editFormat: "diff",
+    });
+
+    // The valid edit is applied...
+    expect(result.changedFiles["file1"].text).toBe('console.log("updated");');
+    // ...and the invalid one is reported, not thrown.
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "FILE_NOT_FOUND",
+        fileName: "missing.js",
+      }),
+    );
+  });
+
+  it("reports NO_EDITS_PARSED when the response contains no edits", async () => {
+    const mockEmptyLlmFunction: LlmFunction = vi.fn().mockResolvedValue({
+      content: "I could not make any changes.",
+      generationId: "test-empty-id",
+    });
+
+    const result = await performAiEdit({
+      ...defaultParams,
+      llmFunction: mockEmptyLlmFunction,
+      editFormat: "diff",
+    });
+
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ code: "NO_EDITS_PARSED" }),
+    );
+    expect(result.changedFiles["file1"].text).toBe('console.log("original");');
   });
 });
 

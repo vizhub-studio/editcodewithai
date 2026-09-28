@@ -1,5 +1,10 @@
 import { parseMarkdownFiles, formatMarkdownFiles } from "llm-code-format";
-import type { PerformAiEditParams, PerformAiEditResult } from "./types";
+import type { VizFiles } from "@vizhub/viz-types";
+import type {
+  PerformAiEditParams,
+  PerformAiEditResult,
+  ApplyWarning,
+} from "./types";
 import {
   PROMPT_TEMPLATE_VERSION,
   assembleFullPrompt,
@@ -11,10 +16,13 @@ import {
   mergeFileChanges,
   parseDiffs,
   applyDiffs,
+  applyDiffsSafe,
   parseDiffFenced,
   parseUdiffs,
   applyUdiffs,
+  applyUdiffsSafe,
   applyHybridEdits,
+  applyHybridEditsSafe,
   isImageFile,
 } from "./fileUtils";
 
@@ -23,6 +31,10 @@ export type {
   PerformAiEditParams,
   PerformAiEditResult,
   EditFormat,
+  ApplyWarning,
+  ApplyWarningCode,
+  ApplyResult,
+  ParsedEdit,
 } from "./types";
 
 export {
@@ -32,10 +44,13 @@ export {
   isImageFile,
   parseDiffs,
   applyDiffs,
+  applyDiffsSafe,
   parseDiffFenced,
   parseUdiffs,
   applyUdiffs,
+  applyUdiffsSafe,
   applyHybridEdits,
+  applyHybridEditsSafe,
   assembleFullPrompt,
   getGenerationMetadata,
   PROMPT_TEMPLATE_VERSION,
@@ -75,40 +90,66 @@ export async function performAiEdit({
 
   // 4. We parse the output to figure out which files changed
   const resultString = result.content;
-  let changedFiles;
+  let changedFiles: VizFiles;
+  const warnings: ApplyWarning[] = [];
+  let editsParsed = 0;
 
   switch (editFormat) {
     case "whole": {
       const parsed = parseMarkdownFiles(resultString, "bold");
+      editsParsed = Object.keys(parsed.files).length;
       changedFiles = mergeFileChanges(files, parsed.files);
       break;
     }
     case "diff": {
       const diffs = parseDiffs(resultString);
-      changedFiles = applyDiffs(files, diffs);
+      editsParsed = diffs.length;
+      const applied = applyDiffsSafe(files, diffs);
+      changedFiles = applied.files;
+      warnings.push(...applied.warnings);
       break;
     }
     case "diff-fenced": {
       const diffs = parseDiffFenced(resultString);
-      changedFiles = applyDiffs(files, diffs);
+      editsParsed = diffs.length;
+      const applied = applyDiffsSafe(files, diffs);
+      changedFiles = applied.files;
+      warnings.push(...applied.warnings);
       break;
     }
     case "udiff": {
       const hunks = parseUdiffs(resultString);
-      changedFiles = applyUdiffs(files, hunks);
+      editsParsed = hunks.length;
+      const applied = applyUdiffsSafe(files, hunks);
+      changedFiles = applied.files;
+      warnings.push(...applied.warnings);
       break;
     }
     case "hybrid": {
-      changedFiles = applyHybridEdits(
+      const diffs = parseDiffs(resultString);
+      const wholeFiles = parseMarkdownFiles(resultString, "bold").files;
+      editsParsed = diffs.length + Object.keys(wholeFiles).length;
+      const applied = applyHybridEditsSafe(
         resultString,
         files,
         (text) => parseMarkdownFiles(text, "bold").files,
       );
+      changedFiles = applied.files;
+      warnings.push(...applied.warnings);
       break;
     }
     default:
       // This will catch any unhandled or unknown edit formats.
       throw new Error(`Unknown edit format: ${editFormat}`);
+  }
+
+  // Zero parsed edits is worth surfacing, but only when nothing else was
+  // reported — otherwise it just adds noise on top of real failures.
+  if (editsParsed === 0 && warnings.length === 0) {
+    warnings.push({
+      code: "NO_EDITS_PARSED",
+      message: "The model returned no applicable edits.",
+    });
   }
 
   // 6. Retrieve cost metadata for charging the user
@@ -138,5 +179,6 @@ export async function performAiEdit({
     outputTokens,
     promptTemplateVersion: PROMPT_TEMPLATE_VERSION,
     rawResponse: resultString, // Include the raw response
+    warnings,
   };
 }

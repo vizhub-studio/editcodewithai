@@ -171,6 +171,45 @@ The library handles several file operations automatically:
 - **Creating new files**: When the AI includes a file name that doesn't exist in the original set.
 - **Deleting files**: When the AI returns empty/whitespace-only content for a file (works with `whole` format; for `diff`/`udiff`, deletions happen naturally when all content is replaced).
 
+### Best-effort application and warnings
+
+`performAiEdit` applies edits independently and **never throws because the model
+returned an edit that could not be matched**. If one edit references a missing
+file, an anchor that cannot be found, or an ambiguous location, that edit is
+skipped and reported — every other valid edit is still applied.
+
+Skipped edits are returned in `result.warnings`:
+
+```typescript
+const result = await performAiEdit({
+  prompt,
+  files,
+  llmFunction,
+  editFormat: "diff",
+});
+
+for (const warning of result.warnings ?? []) {
+  console.warn(warning.code, warning.fileName, warning.message);
+}
+```
+
+| Warning code       | Meaning                                                             |
+| ------------------ | ------------------------------------------------------------------- |
+| `FILE_NOT_FOUND`   | The edit targets a filename that isn't in the file set.             |
+| `SEARCH_NOT_FOUND` | The `SEARCH` text could not be located in the file.                 |
+| `HUNK_NOT_FOUND`   | A udiff hunk's original lines could not be located.                 |
+| `AMBIGUOUS_SEARCH` | The anchor matched more than one location, so the edit was skipped. |
+| `AMBIGUOUS_FILE`   | More than one file shares the target name, so the edit was skipped. |
+| `EMPTY_SEARCH`     | The search block was empty, so the edit could not be applied.       |
+| `NO_EDITS_PARSED`  | The model response contained no recognizable edits.                 |
+
+Matching is deterministic: only harmless formatting drift is absorbed (CRLF vs
+LF, a missing/extra trailing newline, trailing whitespace). Anything ambiguous or
+unmatched is skipped rather than guessed. Successful normalized matches produce
+no warnings.
+
+`warnings` is optional, so existing consumers continue to work unchanged.
+
 ## API Reference
 
 ### `performAiEdit(params)`
@@ -198,16 +237,17 @@ type LlmFunction = (prompt: string) => Promise<{
 
 #### Output: `PerformAiEditResult`
 
-| Property                 | Type       | Description                                                    |
-| ------------------------ | ---------- | -------------------------------------------------------------- |
-| `changedFiles`           | `VizFiles` | The updated file collection with all edits applied.            |
-| `openRouterGenerationId` | `string`   | The generation ID from the LLM function response.              |
-| `upstreamCostCents`      | `number`   | Cost in cents (only populated if `apiKey` was provided).       |
-| `provider`               | `string`   | The OpenRouter provider name used.                             |
-| `inputTokens`            | `number`   | Number of input (prompt) tokens billed.                        |
-| `outputTokens`           | `number`   | Number of output (completion) tokens billed.                   |
-| `promptTemplateVersion`  | `number`   | Version of the prompt template used (for tracking migrations). |
-| `rawResponse`            | `string`   | The raw string response from the LLM, unmodified.              |
+| Property                 | Type             | Description                                                       |
+| ------------------------ | ---------------- | ----------------------------------------------------------------- |
+| `changedFiles`           | `VizFiles`       | The updated file collection with all edits applied.               |
+| `openRouterGenerationId` | `string`         | The generation ID from the LLM function response.                 |
+| `upstreamCostCents`      | `number`         | Cost in cents (only populated if `apiKey` was provided).          |
+| `provider`               | `string`         | The OpenRouter provider name used.                                |
+| `inputTokens`            | `number`         | Number of input (prompt) tokens billed.                           |
+| `outputTokens`           | `number`         | Number of output (completion) tokens billed.                      |
+| `promptTemplateVersion`  | `number`         | Version of the prompt template used (for tracking migrations).    |
+| `rawResponse`            | `string`         | The raw string response from the LLM, unmodified.                 |
+| `warnings`               | `ApplyWarning[]` | Edits that were skipped because they could not be applied safely. |
 
 ### Exported Utilities
 
@@ -225,11 +265,14 @@ import {
 
   // --- Diff parsing (manual use) ---
   parseDiffs, // Parse search/replace blocks (diff format)
-  applyDiffs, // Apply parsed diffs to a file set
+  applyDiffs, // Apply parsed diffs to a file set (throws on unmatched edits)
+  applyDiffsSafe, // Best-effort apply: returns { files, warnings } instead of throwing
   parseDiffFenced, // Parse search/replace blocks (diff-fenced format)
   parseUdiffs, // Parse unified diff hunks
-  applyUdiffs, // Apply parsed unified diff hunks to a file set
+  applyUdiffs, // Apply parsed unified diff hunks (throws on unmatched edits)
+  applyUdiffsSafe, // Best-effort apply: returns { files, warnings } instead of throwing
   applyHybridEdits, // Apply mixed whole-file + diff edits from a single response
+  applyHybridEditsSafe, // Best-effort hybrid apply: returns { files, warnings }
 
   // --- Cost metadata ---
   getGenerationMetadata, // Fetch OpenRouter cost data for a generation ID

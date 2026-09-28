@@ -1,7 +1,7 @@
 import type { EditFormat } from "./types";
 
 // Versions of the prompt template.
-export const PROMPT_TEMPLATE_VERSION = 1;
+export const PROMPT_TEMPLATE_VERSION = 2;
 
 // Template pieces
 const TASK = (prompt: string) => `## Your Task\n\n${prompt}`;
@@ -32,6 +32,7 @@ export const FORMAT_INSTRUCTIONS: Record<EditFormat, string> = {
     "// new code\n",
     ">>>>>>> REPLACE\n",
     "```\n",
+    "Use the exact filename listed in the Original Files section. Copy the SEARCH text verbatim, including whitespace and indentation. Do not invent filenames.",
   ].join(""),
   "diff-fenced": [
     "## Formatting Instructions\n\n",
@@ -44,6 +45,7 @@ export const FORMAT_INSTRUCTIONS: Record<EditFormat, string> = {
     "// new code\n",
     ">>>>>>> REPLACE\n",
     "```\n",
+    "Use the exact filename listed in the Original Files section. Copy the SEARCH text verbatim, including whitespace and indentation. Do not invent filenames.",
   ].join(""),
   udiff: [
     "## Formatting Instructions\n\n",
@@ -55,6 +57,7 @@ export const FORMAT_INSTRUCTIONS: Record<EditFormat, string> = {
     "-// line to be removed\n",
     "+// line to be added\n",
     "```\n",
+    "Use the exact filename listed in the Original Files section. Copy all context lines verbatim, including whitespace. Do not invent filenames; use the whole-file format when creating a new file.",
   ].join(""),
   hybrid: [
     "## Formatting Instructions\n\n",

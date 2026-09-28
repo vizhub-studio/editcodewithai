@@ -159,6 +159,6 @@ describe("prompt", () => {
   });
 
   it("should export a prompt template version", () => {
-    expect(PROMPT_TEMPLATE_VERSION).toBe(1);
+    expect(PROMPT_TEMPLATE_VERSION).toBe(2);
   });
 });

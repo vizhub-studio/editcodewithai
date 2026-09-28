@@ -1,5 +1,7 @@
 import { VizFiles, VizFile, FileCollection } from "@vizhub/viz-types";
 import { generateVizFileId } from "@vizhub/viz-utils";
+import { applyEditsSafe } from "./applyEngine";
+import type { ApplyResult } from "./types";
 
 /**
  * If the LLM outputs empty text for a file, we interpret this
@@ -236,6 +238,72 @@ export function applyHybridEdits(
   changedFiles = mergeFileChanges(changedFiles, parsed);
 
   return changedFiles;
+}
+
+/**
+ * Best-effort variant of `applyDiffs`. Never throws for unmatched files or
+ * anchors; skipped edits are reported in `warnings`.
+ */
+export function applyDiffsSafe(
+  originalFiles: VizFiles,
+  diffs: Diff[],
+): ApplyResult {
+  return applyEditsSafe(
+    originalFiles,
+    diffs.map((diff) => ({
+      kind: "diff" as const,
+      fileName: diff.fileName,
+      search: diff.search,
+      replace: diff.replace,
+    })),
+  );
+}
+
+/**
+ * Best-effort variant of `applyUdiffs`. Never throws for unmatched files or
+ * hunks; skipped edits are reported in `warnings`.
+ */
+export function applyUdiffsSafe(
+  originalFiles: VizFiles,
+  hunks: UdiffHunk[],
+): ApplyResult {
+  return applyEditsSafe(
+    originalFiles,
+    hunks.map((hunk) => ({
+      kind: "udiff" as const,
+      fileName: hunk.fileName,
+      original: hunk.original,
+      updated: hunk.updated,
+    })),
+  );
+}
+
+/**
+ * Best-effort variant of `applyHybridEdits`. Applies search/replace diffs first,
+ * then whole-file replacements. Warnings for diffs that target a file which is
+ * also replaced wholesale are suppressed, since the whole-file content
+ * supersedes the failed diff.
+ */
+export function applyHybridEditsSafe(
+  responseText: string,
+  originalFiles: VizFiles,
+  parseWholeFiles: (text: string) => FileCollection,
+): ApplyResult {
+  const diffResult = applyDiffsSafe(originalFiles, parseDiffs(responseText));
+  const parsedWholeFiles = parseWholeFiles(responseText);
+
+  const changedFiles = mergeFileChanges(diffResult.files, parsedWholeFiles);
+
+  const wholeFileNames = new Set(
+    Object.keys(parsedWholeFiles).map((name) => name.trim()),
+  );
+  const warnings = diffResult.warnings.filter(
+    (warning) =>
+      warning.fileName === undefined ||
+      !wholeFileNames.has(warning.fileName.trim()),
+  );
+
+  return { files: changedFiles, warnings };
 }
 
 export function applyUdiffs(
