@@ -8,6 +8,7 @@ import {
   applyDiffs,
   Diff,
   parseDiffFenced,
+  normalizeDiffFileName,
   UdiffHunk,
   parseUdiffs,
   applyUdiffs,
@@ -231,6 +232,29 @@ describe("fileUtils", () => {
   });
 });
 
+describe("normalizeDiffFileName", () => {
+  it("normalizes common filename decoration", () => {
+    expect(normalizeDiffFileName("`index.js`")).toBe("index.js");
+    expect(normalizeDiffFileName("**index.js**")).toBe("index.js");
+    expect(normalizeDiffFileName("### index.js")).toBe("index.js");
+    expect(normalizeDiffFileName("File: index.js")).toBe("index.js");
+    expect(normalizeDiffFileName("./index.js")).toBe("index.js");
+    expect(normalizeDiffFileName("index.js:")).toBe("index.js");
+  });
+
+  it("leaves plain filenames unchanged", () => {
+    expect(normalizeDiffFileName("index.js")).toBe("index.js");
+    expect(normalizeDiffFileName("path/to/file.js")).toBe("path/to/file.js");
+  });
+
+  it("is idempotent, including repeated leading ./", () => {
+    expect(normalizeDiffFileName("././index.js")).toBe("index.js");
+    const once = normalizeDiffFileName("- **`index.js`**:");
+    expect(normalizeDiffFileName(once)).toBe(once);
+    expect(once).toBe("index.js");
+  });
+});
+
 describe("diff utilities", () => {
   describe("parseDiffs", () => {
     it("should parse a single valid diff block", () => {
@@ -308,6 +332,34 @@ describe("diff utilities", () => {
       const invalidDiff = "this is not a diff";
       expect(parseDiffs(invalidDiff)).toEqual([]);
     });
+
+    it("should normalize decorated filename lines", () => {
+      const cases: Array<[string, string]> = [
+        ["`index.js`", "index.js"],
+        ["**index.js**", "index.js"],
+        ["### index.js", "index.js"],
+        ["File: index.js", "index.js"],
+        ["./index.js", "index.js"],
+        ["index.js:", "index.js"],
+      ];
+
+      for (const [filenameLine, expected] of cases) {
+        const responseText = [
+          filenameLine,
+          "```",
+          "<<<<<<< SEARCH",
+          "const x = 1;",
+          "=======",
+          "const x = 2;",
+          ">>>>>>> REPLACE",
+          "```",
+        ].join("\n");
+
+        const diffs = parseDiffs(responseText);
+        expect(diffs).toHaveLength(1);
+        expect(diffs[0].fileName).toBe(expected);
+      }
+    });
   });
 
   describe("applyDiffs", () => {
@@ -378,6 +430,27 @@ describe("diff-fenced utilities", () => {
       const expected: Diff[] = [
         {
           fileName: "path/to/file.js",
+          search: "const x = 1;",
+          replace: "const x = 2;",
+        },
+      ];
+      expect(parseDiffFenced(responseText)).toEqual(expected);
+    });
+
+    it("should normalize a decorated filename line", () => {
+      const responseText = [
+        "```",
+        "**index.js**",
+        "<<<<<<< SEARCH",
+        "const x = 1;",
+        "=======",
+        "const x = 2;",
+        ">>>>>>> REPLACE",
+        "```",
+      ].join("\n");
+      const expected: Diff[] = [
+        {
+          fileName: "index.js",
           search: "const x = 1;",
           replace: "const x = 2;",
         },
