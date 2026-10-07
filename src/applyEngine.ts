@@ -3,9 +3,7 @@ import { findAnchor } from "./matching";
 import type { ApplyResult, ApplyWarning, ParsedEdit } from "./types";
 
 type FileResolution =
-  | { kind: "found"; id: string }
-  | { kind: "ambiguous" }
-  | { kind: "none" };
+  { kind: "found"; id: string } | { kind: "ambiguous" } | { kind: "none" };
 
 /**
  * Normalizes a filename for comparison: trims, converts Windows separators to
