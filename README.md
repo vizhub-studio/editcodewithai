@@ -204,9 +204,11 @@ for (const warning of result.warnings ?? []) {
 | `NO_EDITS_PARSED`  | The model response contained no recognizable edits.                 |
 
 Matching is deterministic: only harmless formatting drift is absorbed (CRLF vs
-LF, a missing/extra trailing newline, trailing whitespace). Anything ambiguous or
-unmatched is skipped rather than guessed. Successful normalized matches produce
-no warnings.
+LF, a missing/extra trailing newline, trailing whitespace) plus filename drift —
+model-emitted decoration (backticks, bold, headings, a `File:` label, a trailing
+colon, a leading `./`) is stripped, and a target resolves by normalized name,
+case-insensitively, or by a unique basename. Anything ambiguous or unmatched is
+skipped rather than guessed. Successful normalized matches produce no warnings.
 
 `warnings` is optional, so existing consumers continue to work unchanged.
 
@@ -265,6 +267,7 @@ import {
 
   // --- Diff parsing (manual use) ---
   parseDiffs, // Parse search/replace blocks (diff format)
+  normalizeDiffFileName, // Normalize a model-emitted filename (strip decoration/path noise)
   applyDiffs, // Apply parsed diffs to a file set (throws on unmatched edits)
   applyDiffsSafe, // Best-effort apply: returns { files, warnings } instead of throwing
   parseDiffFenced, // Parse search/replace blocks (diff-fenced format)

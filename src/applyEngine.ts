@@ -11,26 +11,52 @@ type FileResolution =
  * Normalizes a filename for comparison: trims, converts Windows separators to
  * "/", collapses duplicate separators, and strips leading "./" and "/".
  *
- * Case is intentionally preserved — case-insensitive matching is not part of
- * the deterministic behavior and is deferred.
+ * Case is intentionally preserved here; callers that need to tolerate case
+ * drift fall back to case-insensitive and basename matching after this exact
+ * normalized comparison fails.
  */
 function normalizeFileName(name: string): string {
   return name
     .trim()
     .replace(/\\/g, "/")
     .replace(/\/+/g, "/")
-    .replace(/^\.\//, "")
+    .replace(/^(?:\.\/)+/, "")
     .replace(/^\/+/, "");
+}
+
+function normalizeForBasename(name: string): string {
+  const normalized = normalizeFileName(name).toLowerCase();
+  return normalized.substring(normalized.lastIndexOf("/") + 1);
 }
 
 function resolveFileId(files: VizFiles, rawName: string): FileResolution {
   const target = normalizeFileName(rawName);
-  const matches = Object.keys(files).filter(
+  const ids = Object.keys(files);
+
+  // 1. Exact match on the normalized name.
+  const exact = ids.filter(
     (id) => normalizeFileName(files[id].name) === target,
   );
+  if (exact.length === 1) return { kind: "found", id: exact[0] };
+  if (exact.length > 1) return { kind: "ambiguous" };
 
-  if (matches.length === 1) return { kind: "found", id: matches[0] };
-  if (matches.length > 1) return { kind: "ambiguous" };
+  // 2. Case-insensitive match on the normalized name.
+  const lowerTarget = target.toLowerCase();
+  const caseInsensitive = ids.filter(
+    (id) => normalizeFileName(files[id].name).toLowerCase() === lowerTarget,
+  );
+  if (caseInsensitive.length === 1)
+    return { kind: "found", id: caseInsensitive[0] };
+  if (caseInsensitive.length > 1) return { kind: "ambiguous" };
+
+  // 3. Basename match (substring after the last "/"), case-insensitive.
+  const basename = lowerTarget.substring(lowerTarget.lastIndexOf("/") + 1);
+  const byBasename = ids.filter(
+    (id) => normalizeForBasename(files[id].name) === basename,
+  );
+  if (byBasename.length === 1) return { kind: "found", id: byBasename[0] };
+  if (byBasename.length > 1) return { kind: "ambiguous" };
+
   return { kind: "none" };
 }
 

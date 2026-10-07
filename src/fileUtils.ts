@@ -107,6 +107,38 @@ export interface Diff {
   replace: string;
 }
 
+/**
+ * Normalizes a model-emitted diff filename line, tolerating common
+ * decoration drift (markdown headings, list markers, labels, backticks,
+ * bold/italic asterisks, trailing colons) as well as path noise.
+ *
+ * Decoration-stripping rules are applied repeatedly until the string stops
+ * changing, so combinations (e.g. `- **`index.js`**:`) fully normalize.
+ */
+export function normalizeDiffFileName(raw: string): string {
+  let name = raw;
+  let previous: string;
+
+  do {
+    previous = name;
+    name = name.trim();
+    name = name.replace(/^#{1,6}\s+/, "");
+    name = name.replace(/^[-*+]\s+/, "");
+    name = name.replace(/^(?:file|path)\s*:\s*/i, "");
+    name = name.replace(/^`+|`+$/g, "");
+    name = name.replace(/^\*+|\*+$/g, "");
+    name = name.replace(/:\s*$/, "");
+    name = name.trim();
+  } while (name !== previous);
+
+  return name
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^(?:\.\/)+/, "")
+    .replace(/^\/+/, "")
+    .trim();
+}
+
 export function parseDiffs(responseText: string): Diff[] {
   const diffs: Diff[] = [];
   // This regex captures the file path, and the content of the SEARCH and REPLACE blocks.
@@ -118,7 +150,7 @@ export function parseDiffs(responseText: string): Diff[] {
   for (const match of matches) {
     const [_, fileName, search, replace] = match;
     diffs.push({
-      fileName: fileName.trim(),
+      fileName: normalizeDiffFileName(fileName),
       search,
       replace,
     });
@@ -162,7 +194,7 @@ export function parseDiffFenced(responseText: string): Diff[] {
   for (const match of matches) {
     const [_, fileName, search, replace] = match;
     diffs.push({
-      fileName: fileName.trim(),
+      fileName: normalizeDiffFileName(fileName),
       search,
       replace,
     });

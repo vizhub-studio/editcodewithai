@@ -136,6 +136,55 @@ describe("applyEditsSafe", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it("resolves a case-insensitive filename match", () => {
+    const files: VizFiles = {
+      file1: { name: "index.js", text: "const x = 1;" },
+    };
+    const result = applyEditsSafe(files, [
+      {
+        kind: "diff",
+        fileName: "Index.js",
+        search: "const x = 1;",
+        replace: "const x = 2;",
+      },
+    ]);
+    expect(result.files.file1.text).toBe("const x = 2;");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("resolves a basename fallback match", () => {
+    const files: VizFiles = {
+      file1: { name: "src/index.js", text: "const x = 1;" },
+    };
+    const result = applyEditsSafe(files, [
+      {
+        kind: "diff",
+        fileName: "index.js",
+        search: "const x = 1;",
+        replace: "const x = 2;",
+      },
+    ]);
+    expect(result.files.file1.text).toBe("const x = 2;");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("skips and warns when the basename is ambiguous", () => {
+    const files: VizFiles = {
+      file1: { name: "a/index.js", text: "a" },
+      file2: { name: "b/index.js", text: "b" },
+    };
+    const result = applyEditsSafe(files, [
+      { kind: "diff", fileName: "index.js", search: "a", replace: "c" },
+    ]);
+    expect(result.files.file1.text).toBe("a");
+    expect(result.files.file2.text).toBe("b");
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatchObject({
+      code: "AMBIGUOUS_FILE",
+      fileName: "index.js",
+    });
+  });
+
   it("applies CRLF / trailing-whitespace normalized matches without warnings", () => {
     const files: VizFiles = {
       file1: { name: "test.js", text: "let a = 1;  \r\nlet b = 2;\r\n" },
