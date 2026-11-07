@@ -2,7 +2,25 @@
 
 A lightweight, model-agnostic library for AI-powered code editing.
 
-See also [vizhub-benchmarks](https://github.com/vizhub-core/vizhub-benchmarks).
+See also [vizhub-benchmarks](https://github.com/vizhub-studio/vizhub-benchmarks).
+
+## Development and integration boundaries
+
+The library is **model-provider agnostic**: callers supply the code-editing model interaction. It is not a hosted AI service, and applications remain responsible for provider credentials, rate limits, generated-code review, and execution sandboxing.
+
+- [`src/index.ts`](src/index.ts) — exported library surface
+- [`src/applyEngine.ts`](src/applyEngine.ts) — edit application
+- [`src/prompt.ts`](src/prompt.ts) and [`src/types.ts`](src/types.ts) — prompts and types
+- [`docs/`](docs/) — existing supporting reference material
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+```
+
+The package also defines benchmark-related scripts; consult their source and prerequisites before using them. The commands above are the basic non-deployment verification path.
 
 ## Overview
 
