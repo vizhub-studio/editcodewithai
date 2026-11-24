@@ -34,6 +34,7 @@ export type {
   EditFormat,
   ApplyWarning,
   ApplyWarningCode,
+  ApplyOptions,
   ApplyResult,
   ParsedEdit,
 } from "./types";
@@ -73,6 +74,7 @@ export async function performAiEdit({
   llmFunction,
   apiKey,
   editFormat = "whole",
+  atomicPerFile = false,
 }: PerformAiEditParams): Promise<PerformAiEditResult> {
   // 1. Format the existing files into the "markdown code block" format
   const preparedResult = prepareFilesForPrompt(files);
@@ -108,7 +110,7 @@ export async function performAiEdit({
     case "diff": {
       const diffs = parseDiffs(resultString);
       editsParsed = diffs.length;
-      const applied = applyDiffsSafe(files, diffs);
+      const applied = applyDiffsSafe(files, diffs, { atomicPerFile });
       changedFiles = applied.files;
       warnings.push(...applied.warnings);
       break;
@@ -116,7 +118,7 @@ export async function performAiEdit({
     case "diff-fenced": {
       const diffs = parseDiffFenced(resultString);
       editsParsed = diffs.length;
-      const applied = applyDiffsSafe(files, diffs);
+      const applied = applyDiffsSafe(files, diffs, { atomicPerFile });
       changedFiles = applied.files;
       warnings.push(...applied.warnings);
       break;
@@ -124,7 +126,7 @@ export async function performAiEdit({
     case "udiff": {
       const hunks = parseUdiffs(resultString);
       editsParsed = hunks.length;
-      const applied = applyUdiffsSafe(files, hunks);
+      const applied = applyUdiffsSafe(files, hunks, { atomicPerFile });
       changedFiles = applied.files;
       warnings.push(...applied.warnings);
       break;
@@ -137,6 +139,7 @@ export async function performAiEdit({
         resultString,
         files,
         (text) => parseMarkdownFiles(text, "bold").files,
+        { atomicPerFile },
       );
       changedFiles = applied.files;
       warnings.push(...applied.warnings);

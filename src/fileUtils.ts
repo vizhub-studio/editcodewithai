@@ -1,7 +1,7 @@
 import { VizFiles, VizFile, FileCollection } from "@vizhub/viz-types";
 import { generateVizFileId } from "@vizhub/viz-utils";
 import { applyEditsSafe } from "./applyEngine";
-import type { ApplyResult } from "./types";
+import type { ApplyOptions, ApplyResult } from "./types";
 
 /**
  * If the LLM outputs empty text for a file, we interpret this
@@ -279,6 +279,7 @@ export function applyHybridEdits(
 export function applyDiffsSafe(
   originalFiles: VizFiles,
   diffs: Diff[],
+  options: ApplyOptions = {},
 ): ApplyResult {
   return applyEditsSafe(
     originalFiles,
@@ -288,6 +289,7 @@ export function applyDiffsSafe(
       search: diff.search,
       replace: diff.replace,
     })),
+    options,
   );
 }
 
@@ -298,6 +300,7 @@ export function applyDiffsSafe(
 export function applyUdiffsSafe(
   originalFiles: VizFiles,
   hunks: UdiffHunk[],
+  options: ApplyOptions = {},
 ): ApplyResult {
   return applyEditsSafe(
     originalFiles,
@@ -307,6 +310,7 @@ export function applyUdiffsSafe(
       original: hunk.original,
       updated: hunk.updated,
     })),
+    options,
   );
 }
 
@@ -320,8 +324,9 @@ export function applyHybridEditsSafe(
   responseText: string,
   originalFiles: VizFiles,
   parseWholeFiles: (text: string) => FileCollection,
+  options: ApplyOptions = {},
 ): ApplyResult {
-  const diffResult = applyDiffsSafe(originalFiles, parseDiffs(responseText));
+  const diffResult = applyDiffsSafe(originalFiles, parseDiffs(responseText), options);
   const parsedWholeFiles = parseWholeFiles(responseText);
 
   const changedFiles = mergeFileChanges(diffResult.files, parsedWholeFiles);

@@ -45,11 +45,18 @@ export interface ApplyWarning {
 
 /**
  * Result of best-effort edit application. `files` always contains the changes
- * that could be applied safely; `warnings` describes everything skipped.
+ * that could be applied safely under the selected policy; `warnings` describes
+ * failures. In atomic mode, a failed patch rolls back all patches to that file.
  */
 export interface ApplyResult {
   files: VizFiles;
   warnings: ApplyWarning[];
+}
+
+/** Optional policy for safe diff application. */
+export interface ApplyOptions {
+  /** Roll back all patches to a resolved file if any patch to it fails. Default: false. */
+  atomicPerFile?: boolean;
 }
 
 export type LlmFunction = (prompt: string) => Promise<{
@@ -57,7 +64,7 @@ export type LlmFunction = (prompt: string) => Promise<{
   generationId?: string;
 }>;
 
-export interface PerformAiEditParams {
+export interface PerformAiEditParams extends ApplyOptions {
   prompt: string;
   files: VizFiles;
   llmFunction: LlmFunction;
