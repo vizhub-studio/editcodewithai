@@ -189,6 +189,17 @@ The library handles several file operations automatically:
 - **Creating new files**: When the AI includes a file name that doesn't exist in the original set.
 - **Deleting files**: When the AI returns empty/whitespace-only content for a file (works with `whole` format; for `diff`/`udiff`, deletions happen naturally when all content is replaced).
 
+### Opt-in per-file atomicity
+
+Pass `atomicPerFile: true` to `performAiEdit` (or as an options object to
+`applyDiffsSafe`, `applyUdiffsSafe`, or `applyHybridEditsSafe`). When any
+patch to a resolved file fails, all patches to that file are rolled back;
+successful patches to other files are retained. Aliases that resolve to the
+same file share the rollback boundary. Missing or ambiguous file targets
+are reported, not guessed. Warnings retain their existing codes, and hybrid
+whole-file replacements still take precedence. The default remains best-effort
+per patch; whole-file mode and the legacy throwing utilities are unchanged.
+
 ### Best-effort application and warnings
 
 `performAiEdit` applies edits independently and **never throws because the model

@@ -1,6 +1,6 @@
 import { VizFiles } from "@vizhub/viz-types";
 import { findAnchor } from "./matching";
-import type { ApplyResult, ApplyWarning, ParsedEdit } from "./types";
+import type { ApplyOptions, ApplyResult, ApplyWarning, ParsedEdit } from "./types";
 
 type FileResolution =
   { kind: "found"; id: string } | { kind: "ambiguous" } | { kind: "none" };
@@ -71,7 +71,9 @@ function replacementOf(edit: ParsedEdit): string {
  *
  * Each edit is applied independently: an edit that cannot be applied safely is
  * skipped and reported in `warnings`, and never prevents other edits from being
- * applied. The input `files` is never mutated.
+ * applied. With atomicPerFile, any failed edit rolls back all edits to its
+ * resolved file ID. Unresolved targets are reported but never guessed.
+ * The input `files` is never mutated.
  *
  * This function only throws for programmer error; anticipated model-output
  * failures are reported as warnings.
@@ -79,9 +81,11 @@ function replacementOf(edit: ParsedEdit): string {
 export function applyEditsSafe(
   files: VizFiles,
   edits: ParsedEdit[],
+  options: ApplyOptions = {},
 ): ApplyResult {
   const work: VizFiles = JSON.parse(JSON.stringify(files));
   const warnings: ApplyWarning[] = [];
+  const failedFileIds = new Set<string>();
 
   for (const edit of edits) {
     const resolution = resolveFileId(work, edit.fileName);
@@ -104,8 +108,12 @@ export function applyEditsSafe(
       continue;
     }
 
+    const recordFailure = () => {
+      if (options.atomicPerFile) failedFileIds.add(resolution.id);
+    };
     const anchor = anchorOf(edit);
     if (anchor.trim() === "") {
+      recordFailure();
       warnings.push({
         code: "EMPTY_SEARCH",
         fileName: edit.fileName,
@@ -118,6 +126,7 @@ export function applyEditsSafe(
     const match = findAnchor(file.text, anchor);
 
     if (match === null) {
+      recordFailure();
       warnings.push({
         code: edit.kind === "udiff" ? "HUNK_NOT_FOUND" : "SEARCH_NOT_FOUND",
         fileName: edit.fileName,
@@ -131,6 +140,7 @@ export function applyEditsSafe(
 
     // Ambiguous anchors are never guessed: skip rather than replace the first.
     if (match.matchCount > 1) {
+      recordFailure();
       warnings.push({
         code: "AMBIGUOUS_SEARCH",
         fileName: edit.fileName,
@@ -143,6 +153,10 @@ export function applyEditsSafe(
       file.text.slice(0, match.start) +
       replacementOf(edit) +
       file.text.slice(match.end);
+  }
+
+  for (const id of failedFileIds) {
+    work[id].text = files[id].text;
   }
 
   return { files: work, warnings };
