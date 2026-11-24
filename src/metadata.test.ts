@@ -68,9 +68,9 @@ describe("metadata", () => {
         });
 
       // Mock setTimeout to execute immediately
-      vi.spyOn(global, "setTimeout").mockImplementation((callback: any) => {
+      vi.spyOn(global, "setTimeout").mockImplementation((callback) => {
         callback();
-        return 0 as any;
+        return 0;
       });
 
       const result = await getGenerationMetadata({
@@ -91,17 +91,18 @@ describe("metadata", () => {
       });
 
       // Mock setTimeout to execute immediately
-      vi.spyOn(global, "setTimeout").mockImplementation((callback: any) => {
+      vi.spyOn(global, "setTimeout").mockImplementation((callback) => {
         callback();
-        return 0 as any;
+        return 0;
       });
 
-      // Reduce max retries for test
-      const originalMaxRetries = 10;
       const testMaxRetries = 3;
 
       // Mock getGenerationMetadata to use fewer retries
-      const getMetadataWithFewerRetries = async (params: any) => {
+      const getMetadataWithFewerRetries = async (params: {
+        apiKey: string;
+        generationId: string;
+      }) => {
         const url = `https://openrouter.ai/api/v1/generation?id=${params.generationId}`;
         const headers = {
           Authorization: `Bearer ${params.apiKey}`,
@@ -128,7 +129,7 @@ describe("metadata", () => {
               outputTokens,
             };
           } else {
-            const text = await response.text();
+            await response.text();
             if (attempt < testMaxRetries) {
               await new Promise((resolve) => setTimeout(resolve, 0));
             } else {

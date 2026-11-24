@@ -32,7 +32,9 @@ export async function getGenerationMetadata({
 
     if (response.ok) {
       const data = await response.json();
-      debug && console.log("[getCost] data:", JSON.stringify(data, null, 2));
+      if (debug) {
+        console.log("[getCost] data:", JSON.stringify(data, null, 2));
+      }
 
       const upstreamCostInDollars = data.data.total_cost;
       const upstreamCostCents = upstreamCostInDollars * 100;
@@ -47,14 +49,17 @@ export async function getGenerationMetadata({
         outputTokens,
       };
     } else {
-      const text = await response.text();
-      debug &&
+      const responseText = await response.text();
+      if (debug) {
         console.error(
-          `Attempt ${attempt} failed. Status: ${response.status}, response text: ${text}`,
+          `Attempt ${attempt} failed. Status: ${response.status}, response text: ${responseText}`,
         );
+      }
 
       if (attempt < maxRetries) {
-        debug && console.log(`Retrying in ${retryDelay / 1000} seconds...`);
+        if (debug) {
+          console.log(`Retrying in ${retryDelay / 1000} seconds...`);
+        }
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
       } else {
         throw new Error(

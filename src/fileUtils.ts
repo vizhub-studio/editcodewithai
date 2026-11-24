@@ -59,7 +59,7 @@ export function mergeFileChanges(
   parsedFiles: FileCollection,
 ): VizFiles {
   // Start with existing files
-  let changedFiles: VizFiles = Object.keys(originalFiles).reduce(
+  const changedFiles: VizFiles = Object.keys(originalFiles).reduce(
     (acc, fileId) => {
       const original = originalFiles[fileId];
       const changedText = parsedFiles[original.name];
@@ -148,7 +148,7 @@ export function parseDiffs(responseText: string): Diff[] {
   const matches = responseText.matchAll(diffRegex);
 
   for (const match of matches) {
-    const [_, fileName, search, replace] = match;
+    const [, fileName, search, replace] = match;
     diffs.push({
       fileName: normalizeDiffFileName(fileName),
       search,
@@ -192,7 +192,7 @@ export function parseDiffFenced(responseText: string): Diff[] {
   const matches = responseText.matchAll(diffRegex);
 
   for (const match of matches) {
-    const [_, fileName, search, replace] = match;
+    const [, fileName, search, replace] = match;
     diffs.push({
       fileName: normalizeDiffFileName(fileName),
       search,
