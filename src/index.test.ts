@@ -254,9 +254,9 @@ console.log("updated via hybrid whole");
         // Whole-file for beta.js
         "**beta.js**",
         "",
-        "\`\`\`js",
+        "```js",
         'const b = "updated via whole";',
-        "\`\`\`",
+        "```",
       ].join("\n"),
       generationId: "test-hybrid-mixed-id",
     });

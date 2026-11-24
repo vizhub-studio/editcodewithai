@@ -85,7 +85,9 @@ export async function performAiEdit({
     editFormat,
     imageFiles: preparedResult.imageFiles,
   });
-  debug && console.log("[performAiEdit] fullPrompt:", fullPrompt);
+  if (debug) {
+    console.log("[performAiEdit] fullPrompt:", fullPrompt);
+  }
 
   // 3. Invoke the model via the provided LLM function
   const result = await llmFunction(fullPrompt);
@@ -94,7 +96,7 @@ export async function performAiEdit({
   const resultString = result.content;
   let changedFiles: VizFiles;
   const warnings: ApplyWarning[] = [];
-  let editsParsed = 0;
+  let editsParsed: number;
 
   switch (editFormat) {
     case "whole": {
